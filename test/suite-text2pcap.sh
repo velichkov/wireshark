@@ -194,7 +194,7 @@ text2pcap_basic_test() {
 	esac
 	case "$text2pcap_capinfos_filetype" in
 		"pcap"|"pcap (gzip compressed)")
-			$TEXT2PCAP -d -l $link_type -t "%Y-%m-%d %H:%M:%S."\
+			$TEXT2PCAP -a -d -l $link_type -t "%Y-%m-%d %H:%M:%S."\
 				testin.txt testout.pcap >testout.txt 2>&1
 			text2pcap_common_pcap_check "$RETURNVALUE"\
 				"$text2pcap_capinfos_encap"\
@@ -203,7 +203,7 @@ text2pcap_basic_test() {
 			test_step_ok
 			;;
 		"nanosecond libpcap"|"pcapng"|"pcapng (gzip compressed)")
-			$TEXT2PCAP -n -d -l $link_type -t "%Y-%m-%d %H:%M:%S."\
+			$TEXT2PCAP -a -n -d -l $link_type -t "%Y-%m-%d %H:%M:%S."\
 				testin.txt testout.pcap >testout.txt 2>&1
 			text2pcap_common_pcapng_check "$RETURNVALUE"\
 				"$text2pcap_capinfos_encap"\
@@ -253,7 +253,7 @@ text2pcap_rsasnakeoil2_pcap() {
 text2pcap_sample_control4_2012_03_24_pcap_test() {
 	# tshark currently output decrypted ZigBee packets and
 	# as a result the number of packets and data size are different
-	text2pcap_basic_test "sample_control4_2012-03-24.pcap" 239 10103
+	text2pcap_basic_test "sample_control4_2012-03-24.pcap" 239 10095
 }
 text2pcap_snakeoil_dtls_test() {
 	text2pcap_basic_test "snakeoil-dtls.pcap"
@@ -277,10 +277,7 @@ text2pcap_dmgr_pcapng_test() {
 	text2pcap_basic_test "dmgr.pcapng"
 }
 text2pcap_dns_icmp_pcapng_gz_test() {
-	# Different data size
-	# Most probably the problem is that input file timestamp precision is in microseconds
-	# File timestamp precision:  microseconds (6)
-	text2pcap_basic_test "dns+icmp.pcapng.gz" "" 3202
+	text2pcap_basic_test "dns+icmp.pcapng.gz"
 }
 text2pcap_packet_h2_14_headers_pcapng_test() {
 	text2pcap_basic_test "packet-h2-14_headers.pcapng"
@@ -311,6 +308,176 @@ text2pcap_step_hash_at_eol() {
 	text2pcap_common_pcapng_check $RETURNVALUE "Ethernet" 1 96
 	test_step_ok
 }
+
+#arg1=hex string arg2=data size
+text2pcap_ascii_common() {
+	echo "$1" | $TEXT2PCAP -a -n -dd - testout.pcap > testout.txt 2>&1
+	RETURNVALUE=$?
+	text2pcap_common_pcapng_check $RETURNVALUE "Ethernet" "1" $2
+	test_step_ok
+}
+text2pcap_ascii_bug1723() {
+	text2pcap_ascii_common \
+		"0000  61 62 20 63 64 20 ab cd                           ab cd .." \
+		"8"
+}
+text2pcap_ascii_2bytes_1space() {
+	text2pcap_ascii_common \
+		"0000  61 62 20 63 64 20                                 ab cd " \
+		"6"
+}
+text2pcap_ascii_2bytes_2spaces() {
+	text2pcap_ascii_common \
+		"0000  61 62 20 20 63 64 20 20 ab cd                     ab  cd  .." \
+		"10"
+}
+text2pcap_ascii_2bytes_3spaces() {
+	text2pcap_ascii_common \
+		"0000  61 62 20 20 20 63 64 20 20 20 ab cd               ab   cd   .." \
+		"12"
+}
+text2pcap_ascii_2bytes_4spaces() {
+	text2pcap_ascii_common \
+		"0000  61 62 20 20 20 20 63 64 20 20 20 20 ab cd         ab    cd    .." \
+		"14"
+}
+text2pcap_ascii_2bytes_1and2_spaces() {
+	text2pcap_ascii_common \
+		"0000  61 62 20 63 64 20 20 ab cd                        ab cd  .." \
+		"9"
+}
+text2pcap_ascii_leading_space() {
+	text2pcap_ascii_common \
+		"0000  20 61 62 20 63 64 20 ab cd                         ab cd .." \
+		"9"
+}
+text2pcap_ascii_leading_2spaces() {
+	text2pcap_ascii_common \
+		"0000  20 20 61 62 20 63 64 20 ab cd                       ab cd .." \
+		"10"
+}
+text2pcap_ascii_leading_2spaces_2spaces() {
+	text2pcap_ascii_common \
+		"0000  20 20 61 62 20 20 63 64 20 20 ab cd                 ab  cd  .." \
+		"12"
+}
+text2pcap_ascii_leading_3spaces() {
+	text2pcap_ascii_common \
+		"0000  20 20 20 61 62 20 63 64 20 ab cd                     ab cd .." \
+		"11"
+}
+text2pcap_ascii_leading_3spaces_3spaces() {
+	text2pcap_ascii_common \
+		"0000  20 20 20 61 62 20 20 20 63 64 20 20 20 ab cd         ab   cd   .." \
+		"15"
+}
+text2pcap_ascii_leading_1space_dots() {
+	text2pcap_ascii_common \
+		"0000  20 ab cd 20 61 62 20 63 64                         .. ab cd" \
+		"9"
+}
+text2pcap_ascii_leading_1space_dots_inbetween() {
+	text2pcap_ascii_common \
+		"0000  20 61 62 20 ab cd 20 63 64                         ab .. cd" \
+		"9"
+}
+text2pcap_ascii_tab() {
+	text2pcap_ascii_common \
+		"0000  32 32 09 35 35                                    22.55" \
+		"5"
+}
+text2pcap_ascii_leading_tab() {
+	text2pcap_ascii_common \
+		"0000  09 31 32 09 31 32                                 .12.12" \
+		"6"
+}
+text2pcap_ascii_faux_hex() {
+	# See comments in http://code.wireshark.org/review/13294
+	cat <<-EOF | $TEXT2PCAP -a -n -d - testout.pcap > testout.txt 2>&1
+0000  30 31 20 32 33 20 34 35 20 36 37 20 38 39 20 61   01 23 45 67 89 a
+0010  62 20 63 64 20 65 66 20 30 31 20 32 33 20 34 35   b cd ef 01 23 45
+0020  20 36 37 20 38 39 20 41 42 20 43 44 20 45 46       67 89 AB CD EF
+	EOF
+	RETURNVALUE=$?
+	text2pcap_common_pcapng_check $RETURNVALUE "Ethernet" 1 47
+	test_step_ok
+}
+text2pcap_ascii_notext_1byte() {
+	text2pcap_ascii_common "0000 30" "1"
+}
+text2pcap_ascii_notext_1byte_1space() {
+	text2pcap_ascii_common "0000 30 20" "2"
+}
+text2pcap_ascii_notext_2bytes() {
+	text2pcap_ascii_common "0000 30 31" "2"
+}
+text2pcap_ascii_notext_3rd_byte_match() {
+	text2pcap_ascii_common "0000 30 31 01" "2"
+}
+text2pcap_ascii_notext_3bytes_1space_match() {
+	text2pcap_ascii_common "0000 30 31 20 01" "3"
+}
+text2pcap_ascii_invalid_text() {
+	# as the ascii text should be "01 .." and not "ff .."
+	text2pcap_ascii_common "0000 30 31 20 01 00        ff .."  "6"
+}
+text2pcap_ascii_od_txCz() {
+	# od -txCz temp.dat
+	text2pcap_ascii_common \
+		"0000000 20 36 37 20 38 39 20 61 62 20 63 64 20 65 66 20  > 67 89 ab cd ef <" \
+		"16"
+}
+
+text2pcap_ascii_text_dump() {
+	# See https://bugs.wireshark.org/bugzilla/show_bug.cgi?id=1723
+	# and comments in http://code.wireshark.org/review/13294
+	test_step_add "Bug 1723" text2pcap_ascii_bug1723
+	test_step_add "Bug 1723 - 2 bytes separated by 1 space"\
+		text2pcap_ascii_2bytes_1space
+	test_step_add "Bug 1723 - 2 bytes separated by 2 spaces"\
+		text2pcap_ascii_2bytes_2spaces
+	test_step_add "Bug 1723 - 2 bytes separated by 3 spaces"\
+		text2pcap_ascii_2bytes_3spaces
+	test_step_add "Bug 1723 - 2 bytes separated by 4 spaces"\
+		text2pcap_ascii_2bytes_4spaces
+	test_step_add "Bug 1723 - 2 bytes separated by 1 and 2 spaces"\
+		text2pcap_ascii_2bytes_1and2_spaces
+	test_step_add "Bug 1723 - leading space"\
+		text2pcap_ascii_leading_space
+	test_step_add "Bug 1723 - leading 2 spaces"\
+		text2pcap_ascii_leading_2spaces
+	test_step_add "Bug 1723 - leading 2 spaces separated by 2 spaces"\
+		text2pcap_ascii_leading_2spaces_2spaces
+	test_step_add "Bug 1723 - leading 3 spaces"\
+		text2pcap_ascii_leading_3spaces
+	test_step_add "Bug 1723 - leading 3 spaces separated by 3 spaces"\
+		text2pcap_ascii_leading_3spaces_3spaces
+	test_step_add "Bug 1723 - leading space and dots"\
+		text2pcap_ascii_leading_1space_dots
+	test_step_add "Bug 1723 - leading space with dots inbeetween"\
+		text2pcap_ascii_leading_1space_dots_inbetween
+	test_step_add "Bug 1723 - tab"\
+		text2pcap_ascii_tab
+	test_step_add "Bug 1723 - leading tab"\
+		text2pcap_ascii_leading_tab
+	test_step_add "faux-hex sequences (http://code.wireshark.org/review/13294)"\
+		text2pcap_ascii_faux_hex
+	test_step_add "No ASCII text - 1 byte"\
+		text2pcap_ascii_notext_1byte
+	test_step_add "No ASCII text - 1 byte and 1 space"\
+		text2pcap_ascii_notext_1byte_1space
+	test_step_add "No ASCII text - 2 bytes and no space"\
+		text2pcap_ascii_notext_2bytes
+	test_step_add "No ASCII text - 3rd byte match the first two"\
+		text2pcap_ascii_notext_3rd_byte_match
+	test_step_add "No ASCII text - 3 bytes and space, 4th match the first two"\
+		text2pcap_ascii_notext_3bytes_1space_match
+	test_step_add "invalid bytes in ASCII text"\
+		text2pcap_ascii_invalid_text
+	test_step_add "invalid bytes (od -txCz output)"\
+		text2pcap_ascii_od_txCz
+}
+
 
 text2pcap_cleanup_step() {
 	rm -f ./testin.txt
@@ -344,6 +511,7 @@ text2pcap_suite() {
 	test_step_add "testing with packet-h2-14_headers.pcapng" text2pcap_packet_h2_14_headers_pcapng_test
 	test_step_add "testing with sip.pcapng" text2pcap_sip_pcapng_test
 	test_step_add "hash sign at the end of the line" text2pcap_step_hash_at_eol
+	test_suite_add "ASCII text dump identification (-a option)" text2pcap_ascii_text_dump
 }
 
 #

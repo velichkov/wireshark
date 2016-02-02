@@ -499,6 +499,9 @@ write_bytes (const char bytes[], guint32 nbytes)
 static void
 unwrite_bytes (guint32 nbytes)
 {
+    if (debug >= 2) {
+        fprintf (stderr, "unwrite %u bytes", nbytes);
+    }
     curr_offset -= nbytes;
 }
 
@@ -1160,7 +1163,7 @@ parse_token (token_t token, char *str)
     int      by_eol;
     int      rollback = 0;
     int      line_size;
-    int      i;
+    int      i, j = 0;
     char    *s2;
     char     tmp_str[3];
 
@@ -1249,9 +1252,10 @@ parse_token (token_t token, char *str)
                     write_current_packet(FALSE);
                     state = INIT;
                 }
-            } else
+            } else {
                 state = READ_OFFSET;
-                pkt_lnstart = packet_buf + num;
+            }
+            pkt_lnstart = packet_buf + num;
             break;
         case T_EOL:
             state = START_OF_LINE;
@@ -1314,18 +1318,24 @@ parse_token (token_t token, char *str)
                 line_size = curr_offset-(int)(pkt_lnstart-packet_buf);
                 s2 = (char*)g_malloc((line_size+1)/4+1);
                 /* gather the possible pattern */
-                for (i = 0; i < (line_size+1)/4; i++) {
-                    tmp_str[0] = pkt_lnstart[i*3];
-                    tmp_str[1] = pkt_lnstart[i*3+1];
+                for (i = 0; i < line_size - (line_size+1)/4; i += 3) {
+
+                    /* skip white spaces */
+                    while (pkt_lnstart[i] == ' ') {
+                        i += 1;
+                    }
+
+                    tmp_str[0] = pkt_lnstart[i];
+                    tmp_str[1] = pkt_lnstart[i+1];
                     tmp_str[2] = '\0';
                     /* it is a valid convertable string */
                     if (!g_ascii_isxdigit(tmp_str[0]) || !g_ascii_isxdigit(tmp_str[1])) {
                         break;
                     }
-                    s2[i] = (char)strtoul(tmp_str, (char **)NULL, 16);
+                    s2[j++] = (char)strtoul(tmp_str, (char **)NULL, 16);
                     rollback++;
                     /* the 3rd entry is not a delimiter, so the possible byte pattern will not shown */
-                    if (!(pkt_lnstart[i*3+2] == ' ')) {
+                    if (!(pkt_lnstart[i+2] == ' ')) {
                         if (by_eol != 1)
                             rollback--;
                         break;
@@ -1339,10 +1349,17 @@ parse_token (token_t token, char *str)
                     if (strncmp(pkt_lnstart+line_size-rollback, s2, rollback) == 0) {
                         unwrite_bytes(rollback);
                     }
-                    /* Not matched. This line contains invalid packet bytes, so
-                       discard the whole line */
+                    /* Not matched. */
                     else {
-                        unwrite_bytes(line_size);
+                        /* Do not unwrite bytes, most probably the ASCII text
+                         * is either invalid or contains a separator or there
+                         * is no ASCII text at all.
+                         *
+                         * For example the "od -txCz" output looks like
+                         * 0000060 20 36 37 20 38 39 20 61 62 20 63 64 20 65 66 20  > 67 89 ab cd ef <
+                         */
+
+                        /* unwrite_bytes(line_size); */
                     }
                 }
                 g_free(s2);
